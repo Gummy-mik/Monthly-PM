@@ -1,72 +1,130 @@
 
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <title>PM Monthly Update Dashboard</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    :root { --brand:#00a6d6; --border:#555; --muted:#666; --bg:#fff; --stripe:#f7f9fb; }
-    *{ box-sizing:border-box }
-    body{ font-family:system-ui,Segoe UI,Arial,sans-serif; margin:16px; color:#111; background:var(--bg) }
-    header{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin-bottom:12px }
-    h1{ font-size:18px; margin:0 }
-    .controls{ display:flex; align-items:center; gap:8px; flex-wrap:wrap }
-    input[type="text"]{ padding:6px 8px; border:1px solid #aaa; border-radius:4px; min-width:220px }
-    button{ padding:8px 12px; background:#0f62fe; color:#fff; border:1px solid #0f62fe; border-radius:6px; cursor:pointer; font-weight:600 }
-    button.secondary{ background:#fff; color:#0f62fe }
-    .table-wrap{ overflow:auto; border:1px solid var(--border); border-radius:6px }
-    table{ border-collapse:collapse; width:100%; min-width:900px }
-    thead th{ background:var(--brand); color:#fff; text-align:center; padding:10px 8px; border:1px solid var(--border); font-weight:700; font-size:14px }
-    tbody td, tfoot td{ border:1px solid var(--border); padding:6px 8px; font-size:14px }
-    .region-row td{ background:#e9eef3; font-weight:800; letter-spacing:.3px }
-    .label-cell{ font-weight:600; white-space:nowrap }
-    .right{ text-align:right } .center{ text-align:center }
-    tbody tr:nth-child(even) td{ background:var(--stripe) }
-    tfoot td{ font-weight:800; background:#f0f4f7 }
-    .variance-pos{ color:#0b8457 } .variance-neg{ color:#b00020 }
-    .pct-cell{ font-weight:700 }
-    .meta{ margin-top:8px; color:var(--muted); font-size:13px }
-    @media print{
-      @page{ size:A4 landscape; margin:12mm }
-      header,.meta{ display:none!important }
-      body{ margin:0 } .table-wrap{ border:none }
-      thead th{ -webkit-print-color-adjust:exact; print-color-adjust:exact }
+/* PM Monthly Update Dashboard – v7 */
+const $ = (id) => document.getElementById(id);
+const fmt = (n) => new Intl.NumberFormat('en-PH').format(n);
+const pct = (num, den) => (den > 0 ? (num / den) * 100 : 0);
+
+// ---------- DATA (EDIT HERE) ----------
+let regions = [];
+
+function loadSample() {
+  // NORTH LUZON with sub-rows: AJSL - BC, AJSL - CC, AJSL - PLC
+  regions = [
+    {
+      name: 'NORTH LUZON',
+      rows: [
+        { label: 'AJSL - BC',  totalSites: 57, required: 114, qpm: 3, planned: 26, actual: 26 },
+        { label: 'AJSL - CC',  totalSites: 3,  required: 6,   qpm: 0, planned:  6, actual:  2 },
+        { label: 'AJSL - PLC', totalSites: 5,  required: 10,  qpm: 0, planned: 10, actual:  1 },
+      ]
     }
-  </style>
-</head>
-<body>
-  <header>
-    <h1>MONTHLY UPDATE</h1>
-    <div class="controls">
-      <input type="text" id="dateRange" value="Feb 2 – Feb 5" />
-      <button id="downloadPdfBtn">Download PDF</button>
-      <button id="resetBtn" class="secondary">Reset Sample</button>
-    </div>
-  </header>
+  ];
+}
+// -------------------------------------
 
-  <div class="table-wrap">
-    <table id="pmTable" aria-label="PM Monthly Update Table">
-      <thead>
-        <tr>
-          <th style="width:220px">&nbsp;</th>
-          <th>TOTAL SITES</th>
-          <th>REQUIRED VISIT</th>
-          <th>QPM TOTAL</th>
-          <th>PLANNED</th>
-          <th>ACTUAL</th>
-          <th>VARIANCE</th>
-          <th>%</th>
-        </tr>
-      </thead>
-      <tbody id="tbody"></tbody>
-      <tfoot id="tfoot"></tfoot>
-    </table>
-  </div>
+function computeRegionTotals(region) {
+  const t = { totalSites: 0, required: 0, qpm: 0, planned: 0, actual: 0 };
+  for (const r of region.rows) {
+    t.totalSites += r.totalSites || 0;
+    t.required   += r.required   || 0;
+    t.qpm        += r.qpm        || 0;
+    t.planned    += r.planned    || 0;
+    t.actual     += r.actual     || 0;
+  }
+  t.variance = t.planned - t.actual;
+  t.percent = pct(t.actual, t.required);
+  return t;
+}
 
-  <div class="meta" id="generatedNote"></div>
+function computeGrandTotals(data) {
+  const t = { totalSites: 0, required: 0, qpm: 0, planned: 0, actual: 0 };
+  for (const region of data) {
+    const rt = computeRegionTotals(region);
+    t.totalSites += rt.totalSites;
+    t.required   += rt.required;
+    t.qpm        += rt.qpm;
+    t.planned    += rt.planned;
+    t.actual     += rt.actual;
+  }
+  t.variance = t.planned - t.actual;
+  t.percent = pct(t.actual, t.required);
+  return t;
+}
 
-  <!-- increase v= number kapag nag-a-update ka para ma-bypass ang cache -->
-  <script src="script.js?v=7"></script>
-</body>
-</html>
+function render() {
+  const tbody = $("tbody");
+  const tfoot = $("tfoot");
+  tbody.innerHTML = "";
+  tfoot.innerHTML = "";
+
+  // Regions
+  for (const region of regions) {
+    const rt = computeRegionTotals(region);
+
+    // Region header row
+    const rHead = document.createElement("tr");
+    rHead.className = "region-row";
+    rHead.innerHTML = `
+      <td class="label-cell">${region.name}</td>
+      <td class="right">${fmt(rt.totalSites)}</td>
+      <td class="right">${fmt(rt.required)}</td>
+      <td class="right">${fmt(rt.qpm)}</td>
+      <td class="right">${fmt(rt.planned)}</td>
+      <td class="right">${fmt(rt.actual)}</td>
+      <td class="right ${rt.variance >= 0 ? 'variance-pos' : 'variance-neg'}">${fmt(rt.variance)}</td>
+      <td class="right pct-cell">${rt.percent.toFixed(1)}%</td>
+    `;
+    tbody.appendChild(rHead);
+
+    // Sub-rows (e.g., AJSL - BC / CC / PLC)
+    for (const row of region.rows) {
+      const variance = (row.planned || 0) - (row.actual || 0);
+      const percent = pct(row.actual || 0, row.required || 0);
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td class="label-cell">${row.label}</td>
+        <td class="right">${fmt(row.totalSites || 0)}</td>
+        <td class="right">${fmt(row.required || 0)}</td>
+        <td class="right">${fmt(row.qpm || 0)}</td>
+        <td class="right">${fmt(row.planned || 0)}</td>
+        <td class="right">${fmt(row.actual || 0)}</td>
+        <td class="right ${variance >= 0 ? 'variance-pos' : 'variance-neg'}">${fmt(variance)}</td>
+        <td class="right pct-cell">${percent.toFixed(1)}%</td>
+      `;
+      tbody.appendChild(tr);
+    }
+  }
+
+  // Grand total (footer)
+  const g = computeGrandTotals(regions);
+  const trf = document.createElement("tr");
+  trf.innerHTML = `
+    <td class="label-cell">TOTAL</td>
+    <td class="right">${fmt(g.totalSites)}</td>
+    <td class="right">${fmt(g.required)}</td>
+    <td class="right">${fmt(g.qpm)}</td>
+    <td class="right">${fmt(g.planned)}</td>
+    <td class="right">${fmt(g.actual)}</td>
+    <td class="right ${g.variance >= 0 ? 'variance-pos' : 'variance-neg'}">${fmt(g.variance)}</td>
+    <td class="right pct-cell">${g.percent.toFixed(1)}%</td>
+  `;
+  tfoot.appendChild(trf);
+
+  // Note
+  const dateRange = $("dateRange").value || "";
+  $("generatedNote").textContent = `Period: ${dateRange} • Generated: ${new Date().toLocaleString('en-PH')}`;
+}
+
+function handlePdf() { window.print(); }
+
+function wireEvents() {
+  $("downloadPdfBtn").addEventListener("click", handlePdf);
+  $("dateRange").addEventListener("change", render);
+  $("resetBtn").addEventListener("click", () => { loadSample(); render(); });
+}
+
+(function init() {
+  loadSample();
+  wireEvents();
+  render();
+})();
